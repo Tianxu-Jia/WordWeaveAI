@@ -1,11 +1,9 @@
 #!/usr/bin/env python
-from random import randint
-
 from pydantic import BaseModel
-
 from crewai.flow import Flow, listen, start
 
-from wordweaveai.crews.poem_crew.poem_crew import PoemCrew
+from wordweaveai.crews.academic_writer_crew.academic_writer_crew import AcademicWriterCrew
+from wordweaveai.tools.custom_tool import ArxivSearch
 
 
 class PoemState(BaseModel):
@@ -13,41 +11,59 @@ class PoemState(BaseModel):
     poem: str = ""
 
 
-class PoemFlow(Flow[PoemState]):
+#class AcademicWritingFlow(Flow[PoemState]):
+class AcademicWritingFlow(Flow):
+    def __init__(self, 
+                 research_proposal_md_file, 
+                 major):
+        super().__init__()
+        self.research_proposal_md_file=research_proposal_md_file
+        self.research_proposal=""
+        self.major = major
 
     @start()
-    def generate_sentence_count(self):
-        print("Generating sentence count")
-        self.state.sentence_count = randint(1, 5)
+    def read_research_proposal(self):
+        print("reading the research proposal")
+        with open(research_proposal_md_file, "r", encoding="utf-8") as file:
+            content = file.read()
+        self.research_proposal = content
 
-    @listen(generate_sentence_count)
-    def generate_poem(self):
-        print("Generating poem")
-        result = (
-            PoemCrew()
-            .crew()
-            .kickoff(inputs={"sentence_count": self.state.sentence_count})
-        )
 
-        print("Poem generated", result.raw)
-        self.state.poem = result.raw
+    @listen(read_research_proposal)
+    def extract_research_topic(self):
+        print("Generating searching keywords and phrases")
+        inputs = {"major": self.major,
+                  "research_proposal": self.research_proposal}
+        topics = AcademicWriterCrew().crew_extract_research_topic().kickoff(inputs=inputs)
 
-    @listen(generate_poem)
+        self.topics = topics.pydantic.phrase_list
+        debug = 1   
+    
+    @listen(extract_research_topic)
+    def search_and_download_ref_papers(self):
+        arx_eng = ArxivSearch()
+        for topic in self.topics:
+
+
+    @listen(generate_search_phrases)
     def save_poem(self):
         print("Saving poem")
         with open("poem.txt", "w") as f:
             f.write(self.state.poem)
 
 
-def kickoff():
-    poem_flow = PoemFlow()
-    poem_flow.kickoff()
+def kickoff(research_proposal_md_file, major, plot_flow):
+    academic_writing_flow = AcademicWritingFlow(research_proposal_md_file,
+                                                major)
 
+    if plot_flow:
+        academic_writing_flow.plot("cacdemic_writing_flow.html")
 
-def plot():
-    poem_flow = PoemFlow()
-    poem_flow.plot()
-
+    academic_writing_flow.kickoff()
 
 if __name__ == "__main__":
-    kickoff()
+    research_proposal_md_file = "./src/wordweaveai/crews/academic_writer_crew/config/research_proposal.md"
+    major = "finacial, AI"
+    kickoff(research_proposal_md_file, 
+            major=major,
+            plot_flow=False)
